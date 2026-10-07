@@ -78,6 +78,14 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODELS = [m.strip() for m in os.getenv("OLLAMA_MODELS", "").split(",") if m.strip()]
 ALL_MODELS = GEMINI_MODELS + OPENAI_MODELS + OPENAI_MODELS_CUSTOM + OLLAMA_MODELS
 DEFAULT_MODEL = "gemini-3-flash-preview"
+# Max seconds to wait for the next agent event before giving up (raise for slow local LLMs).
+AGENT_EVENT_TIMEOUT = int(os.getenv("AGENT_EVENT_TIMEOUT", "300"))
+_HAS_GEMINI_CREDS = any(os.getenv(k) for k in (
+    "GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS",
+    "GOOGLE_SERVICE_ACCOUNT_JSON", "GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT"))
+# No Google credentials configured: default to the first local/custom model instead.
+if not _HAS_GEMINI_CREDS and (OPENAI_MODELS_CUSTOM or OLLAMA_MODELS):
+    DEFAULT_MODEL = (OPENAI_MODELS_CUSTOM or OLLAMA_MODELS)[0]
 IMAGE_GEN_MODELS = [
     "gemini-3.1-flash-image-preview",
 ]
@@ -649,12 +657,12 @@ def _run_agent_sse(generation_id: int, message: str, is_continuation: bool = Fal
 
     while True:
         try:
-            ev = event_queue.get(timeout=300)  # 5 min per event
+            ev = event_queue.get(timeout=AGENT_EVENT_TIMEOUT)
             if ev is None:
                 break
             yield ev
         except queue_mod.Empty:
-            yield sse_event("error", {"message": "Agent timed out (5 min without response)"})
+            yield sse_event("error", {"message": f"Agent timed out ({AGENT_EVENT_TIMEOUT // 60} min without response)"})
             break
 
     db.close()
@@ -938,7 +946,7 @@ async def start_generation(data: GenerateRequest):
         raise HTTPException(400, "Colors array is required")
 
     db = get_db()
-    model = data.model if data.model in GEMINI_MODELS else DEFAULT_MODEL
+    model = data.model if data.model in ALL_MODELS else DEFAULT_MODEL
     cur = db.execute(
         "INSERT INTO generations (prompt, system_prompt, colors, size, model, reference_id, sprite_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (data.prompt, data.system_prompt, json.dumps(data.colors), data.size, model, data.reference_id, data.sprite_type),
