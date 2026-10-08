@@ -7,7 +7,15 @@ agent and the MCP server can all import it.
 import base64
 import io
 
-from PIL import Image
+from PIL import Image, ImageDraw
+
+
+def grid_char(v: int) -> str:
+    """The single-char symbol for a palette index in the text grid: 0-9, A-Z, '.' for transparent."""
+    if v < 0: return "."
+    if v < 10: return str(v)
+    if v < 36: return chr(ord("A") + v - 10)
+    return "#"
 
 
 # ── Canvas State ──
@@ -123,13 +131,6 @@ class Canvas:
 
     def to_visual_grid(self) -> str:
         """Compact visual grid using single-char symbols. Much easier for small LLMs to parse."""
-        # Map palette indices to readable chars: 0=0, 1=1, ..., 9=9, 10=A, 11=B, ..., -1=.
-        def _char(v: int) -> str:
-            if v < 0: return "."
-            if v < 10: return str(v)
-            if v < 36: return chr(ord("A") + v - 10)
-            return "#"
-
         # Column ruler
         if self.size <= 16:
             ruler = "   " + "".join(f"{x:X}" for x in range(self.size))
@@ -142,9 +143,68 @@ class Canvas:
         rows = []
         for y, row in enumerate(self.pixels):
             label = f"{y:>2} " if self.size <= 16 else f"{y:>3}"
-            rows.append(label + "".join(_char(v) for v in row))
+            rows.append(label + "".join(grid_char(v) for v in row))
 
         return ruler + "\n" + "\n".join(rows)
+
+    def to_view_text(self) -> str:
+        """The painter's text view: the grid, a legend of colours in use (most-used first) and the fill count."""
+        counts: dict[int, int] = {}
+        for row in self.pixels:
+            for v in row:
+                if v >= 0:
+                    counts[v] = counts.get(v, 0) + 1
+        if counts:
+            legend = ["Legend (char = index #hex: px):"] + [
+                f"{grid_char(i)} = {i} {self.palette[i]}: {n}px"
+                for i, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+            ]
+        else:
+            legend = ["Legend: no colours used yet"]
+        filled = f"Filled: {sum(counts.values())}/{self.size * self.size} px"
+        return "\n".join([self.to_visual_grid(), "", *legend, filled])
+
+    VIEW_PX = 512
+    VIEW_MARGIN = 18
+    # Dark blue-grey: a neutral grey checker camouflaged grey palette colours in the #7 trials.
+    VIEW_CHECKER = ((30, 30, 44, 255), (44, 44, 64, 255))
+    VIEW_GRID_MINOR = (0, 0, 0, 255)
+    VIEW_GRID_MAJOR = (255, 0, 255, 255)
+    VIEW_LABEL = (230, 230, 230, 255)
+
+    def to_view_png(self) -> bytes:
+        """The painter's image view: ~512px nearest-neighbour upscale over a checkerboard, with 1px gridlines
+        (a contrasting one every 4px) and x/y labels in the top/left margin. Returns PNG bytes."""
+        cell = self.VIEW_PX // self.size
+        edge = cell * self.size
+        margin = self.VIEW_MARGIN
+        out = Image.new("RGBA", (margin + edge, margin + edge), (24, 24, 24, 255))
+
+        board = Image.new("RGBA", (edge, edge))
+        bd = ImageDraw.Draw(board)
+        for y in range(self.size):
+            for x in range(self.size):
+                bd.rectangle([x * cell, y * cell, (x + 1) * cell - 1, (y + 1) * cell - 1],
+                             fill=self.VIEW_CHECKER[(x + y) % 2])
+        board.alpha_composite(self.to_image().resize((edge, edge), Image.NEAREST))
+        out.paste(board, (margin, margin))
+
+        d = ImageDraw.Draw(out)
+        last = margin + edge - 1
+        for i in range(self.size + 1):
+            p = min(margin + i * cell, last)
+            colour = self.VIEW_GRID_MAJOR if i % 4 == 0 else self.VIEW_GRID_MINOR
+            d.line([(p, margin), (p, last)], fill=colour)
+            d.line([(margin, p), (last, p)], fill=colour)
+        step = 1 if self.size <= 16 else 4
+        for i in range(0, self.size, step):
+            mid = margin + i * cell + cell // 2
+            d.text((mid - 4, 3), str(i), fill=self.VIEW_LABEL)
+            d.text((1, mid - 5), str(i), fill=self.VIEW_LABEL)
+
+        buf = io.BytesIO()
+        out.save(buf, format="PNG")
+        return buf.getvalue()
 
     def region_summary(self, y1: int, x1: int, y2: int, x2: int) -> str:
         """Describe what's in a rectangular region — helps the model understand spatial layout."""
@@ -204,6 +264,12 @@ class Canvas:
         return count
 
     def draw_triangle(self, x1: int, y1: int, x2: int, y2: int, x3: int, y3: int, color: int, fill: bool = True) -> int:
+        if not fill:
+            before = [row[:] for row in self.pixels]
+            for ax, ay, bx, by in ((x1, y1, x2, y2), (x2, y2, x3, y3), (x3, y3, x1, y1)):
+                self.draw_line(ax, ay, bx, by, color)
+            return sum(a != b for ra, rb in zip(before, self.pixels) for a, b in zip(ra, rb))
+
         def sign(px, py, ax, ay, bx, by):
             return (px - bx) * (ay - by) - (ax - bx) * (py - by)
 
@@ -222,6 +288,47 @@ class Canvas:
                 has_pos = (d1 > 0) or (d2 > 0) or (d3 > 0)
                 if not (has_neg and has_pos):
                     self.pixels[y][x] = color
+                    count += 1
+        return count
+
+    # ── Region fill and symmetry ──
+
+    def flood_fill(self, x: int, y: int, color: int) -> int:
+        """Recolour the 4-connected region of same-coloured pixels containing (x, y)."""
+        if not (0 <= x < self.size and 0 <= y < self.size):
+            return 0
+        target = self.pixels[y][x]
+        if target == color:
+            return 0
+        count = 0
+        stack = [(x, y)]
+        while stack:
+            px, py = stack.pop()
+            if 0 <= px < self.size and 0 <= py < self.size and self.pixels[py][px] == target:
+                self.pixels[py][px] = color
+                count += 1
+                stack += [(px + 1, py), (px - 1, py), (px, py + 1), (px, py - 1)]
+        return count
+
+    MIRROR_DIRECTIONS = {
+        "x": ("left_to_right", "right_to_left"),
+        "y": ("top_to_bottom", "bottom_to_top"),
+    }
+
+    def mirror(self, axis: str, direction: str) -> int:
+        """Copy one half of the canvas onto the other, reflected. Raises ValueError on a bad axis/direction."""
+        if direction not in self.MIRROR_DIRECTIONS.get(axis, ()):
+            valid = "; ".join(f"axis {a!r}: {' | '.join(d)}" for a, d in self.MIRROR_DIRECTIONS.items())
+            raise ValueError(f"mirror axis {axis!r} with direction {direction!r} is invalid ({valid})")
+        n = self.size
+        from_first_half = direction in ("left_to_right", "top_to_bottom")
+        count = 0
+        for a in range(n):
+            for b in range(n // 2):
+                src, dst = (b, n - 1 - b) if from_first_half else (n - 1 - b, b)
+                sx, sy, dx, dy = (src, a, dst, a) if axis == "x" else (a, src, a, dst)
+                if self.pixels[dy][dx] != self.pixels[sy][sx]:
+                    self.pixels[dy][dx] = self.pixels[sy][sx]
                     count += 1
         return count
 
