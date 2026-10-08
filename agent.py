@@ -62,6 +62,68 @@ def _thread_id_for(gen_id) -> str:
 
 _posthog_client = None
 
+# ── LLM debug logging ──
+#
+# LLM_DEBUG=1  log every LLM request/response/error with timings (our side vs. server side)
+# LLM_DEBUG=2  also log full message contents + raw HTTP traffic from the openai/httpx clients
+
+LLM_DEBUG = int(os.getenv("LLM_DEBUG", "0") or 0)
+
+if LLM_DEBUG >= 2:
+    import logging as _logging
+    _logging.basicConfig(level=_logging.INFO)
+    for _name in ("openai", "httpx", "httpcore"):
+        _logging.getLogger(_name).setLevel(_logging.DEBUG)
+
+
+def _make_llm_debug_callback():
+    import time as _time
+    from langchain_core.callbacks import BaseCallbackHandler
+
+    def log(msg: str) -> None:
+        print(f"[LLM {_time.strftime('%H:%M:%S')}] {msg}", flush=True)
+
+    class LLMDebugHandler(BaseCallbackHandler):
+        def __init__(self):
+            self._starts: dict = {}
+
+        def _describe(self, msgs) -> str:
+            n = len(msgs)
+            chars = sum(len(str(getattr(m, "content", m))) for m in msgs)
+            images = sum(str(getattr(m, "content", "")).count("image_url") for m in msgs)
+            return f"{n} msgs, ~{chars} chars, {images} image(s)"
+
+        def on_chat_model_start(self, serialized, messages, *, run_id, invocation_params=None, **kw):
+            self._starts[run_id] = _time.monotonic()
+            p = invocation_params or {}
+            flat = messages[0] if messages else []
+            log(f"→ request model={p.get('model') or p.get('model_name')} "
+                f"base_url={p.get('base_url') or p.get('openai_api_base') or '-'} "
+                f"timeout={p.get('timeout') or p.get('request_timeout') or 'default'} "
+                f"tools={len(p.get('tools') or [])} | {self._describe(flat)}")
+            if LLM_DEBUG >= 2:
+                for m in flat:
+                    log(f"    [{getattr(m, 'type', '?')}] {str(getattr(m, 'content', ''))[:1500]}")
+
+        def on_llm_end(self, response, *, run_id, **kw):
+            took = _time.monotonic() - self._starts.pop(run_id, _time.monotonic())
+            try:
+                gen = response.generations[0][0]
+                msg = getattr(gen, "message", None)
+                usage = getattr(msg, "usage_metadata", None) or {}
+                calls = [c["name"] for c in (getattr(msg, "tool_calls", None) or [])]
+                text = (gen.text or "")[:200 if LLM_DEBUG < 2 else 1500]
+                log(f"← response in {took:.1f}s usage={usage} tool_calls={calls} text={text!r}")
+            except Exception as e:
+                log(f"← response in {took:.1f}s (could not parse: {e})")
+
+        def on_llm_error(self, error, *, run_id, **kw):
+            took = _time.monotonic() - self._starts.pop(run_id, _time.monotonic())
+            log(f"✗ ERROR after {took:.1f}s: {type(error).__name__}: {error}")
+
+    return LLMDebugHandler()
+
+
 def _get_posthog_callback(distinct_id: str | None = None, trace_id: str | None = None):
     """Returns a PostHog CallbackHandler if POSTHOG_API_KEY is set, else None."""
     global _posthog_client
@@ -776,6 +838,9 @@ Use the canvas tools to make the requested changes. Call finish when done."""
     ph_callback = _get_posthog_callback(distinct_id=str(gen_id), trace_id=f"gen_{gen_id}")
     if ph_callback:
         config["callbacks"] = [ph_callback]
+    if LLM_DEBUG:
+        config.setdefault("callbacks", []).append(_make_llm_debug_callback())
+        print(f"[LLM] gen={gen_id} model={model_name} new_session={is_new} vision={vision} tools={[t.name for t in tools]}", flush=True)
 
     step_count = 0
     finished = False
