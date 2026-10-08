@@ -1,0 +1,4 @@
+{"t": 1791485858.6220295, "tool": "create_canvas", "canvas_id": "cobble", "size": 16}
+{"t": 1791485867.453884, "tool": "draw", "canvas_id": "cobble", "ops": 25}
+{"t": 1791485867.5978875, "tool": "view_canvas", "canvas_id": "cobble", "view": "text", "px": 512, "grid": true, "text_chars": 615, "png_bytes": 0}
+{"t": 1791485869.8703332, "tool": "export_png", "canvas_id": "cobble", "path": "C:\\workspace\\repos\\EYamanS\\texel-proto-view\\prototype_view_canvas_runs\\text@r2__cobble\\sprite.png"}

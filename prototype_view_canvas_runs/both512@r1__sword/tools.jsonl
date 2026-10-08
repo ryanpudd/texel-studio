@@ -1,0 +1,8 @@
+{"t": 1791486041.8684566, "tool": "create_canvas", "canvas_id": "c1", "size": 16}
+{"t": 1791486053.3892093, "tool": "draw", "canvas_id": "c1", "ops": 1}
+{"t": 1791486053.5423586, "tool": "view_canvas", "canvas_id": "c1", "view": "both", "px": 512, "grid": true, "text_chars": 647, "png_bytes": 7930}
+{"t": 1791486062.61419, "tool": "clear", "canvas_id": "c1"}
+{"t": 1791486065.021299, "tool": "draw", "canvas_id": "c1", "ops": 1}
+{"t": 1791486065.1597586, "tool": "view_canvas", "canvas_id": "c1", "view": "both", "px": 512, "grid": true, "text_chars": 645, "png_bytes": 7952}
+{"t": 1791486069.7920647, "tool": "draw", "canvas_id": "c1", "ops": 1}
+{"t": 1791486070.3270419, "tool": "export_png", "canvas_id": "c1", "path": "C:\\workspace\\repos\\EYamanS\\texel-proto-view\\prototype_view_canvas_runs\\both512@r1__sword\\sprite.png"}

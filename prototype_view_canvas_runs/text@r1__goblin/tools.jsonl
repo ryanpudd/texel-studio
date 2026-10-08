@@ -1,0 +1,5 @@
+{"t": 1791485858.5508025, "tool": "create_canvas", "canvas_id": "goblin", "size": 32}
+{"t": 1791485870.47204, "tool": "draw", "canvas_id": "goblin", "ops": 17}
+{"t": 1791485870.4827902, "tool": "view_canvas", "canvas_id": "goblin", "view": "text", "px": 512, "grid": true, "text_chars": 1616, "png_bytes": 0}
+{"t": 1791485872.687236, "tool": "draw", "canvas_id": "goblin", "ops": 1}
+{"t": 1791485873.1397521, "tool": "export_png", "canvas_id": "goblin", "path": "C:\\workspace\\repos\\EYamanS\\texel-proto-view\\prototype_view_canvas_runs\\text@r1__goblin\\sprite.png"}

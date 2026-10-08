@@ -1,0 +1,4 @@
+{"t": 1791485858.6552727, "tool": "create_canvas", "canvas_id": "sword", "size": 16}
+{"t": 1791485865.8537679, "tool": "draw", "canvas_id": "sword", "ops": 1}
+{"t": 1791485866.042591, "tool": "view_canvas", "canvas_id": "sword", "view": "text", "px": 512, "grid": true, "text_chars": 644, "png_bytes": 0}
+{"t": 1791485870.906244, "tool": "export_png", "canvas_id": "sword", "path": "C:\\workspace\\repos\\EYamanS\\texel-proto-view\\prototype_view_canvas_runs\\text@r1__sword\\sprite.png"}
