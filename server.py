@@ -22,6 +22,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from PIL import Image
+from canvas import (
+    _darken_px,
+    generate_autotile_variant,
+    generate_tileset,
+    pixels_to_image,
+    upscale_image,
+)
 from google import genai
 
 # ── AI Response Schemas ──
@@ -221,121 +228,10 @@ def get_db():
 
 # ── Image construction ──
 
-def pixels_to_image(pixel_data: list[list[int]], palette: list[str], size: int) -> Image.Image:
-    """Convert 2D array of palette indices to PIL Image."""
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    for y, row in enumerate(pixel_data):
-        for x, idx in enumerate(row):
-            if idx < 0 or idx >= len(palette):
-                continue  # transparent
-            hex_color = palette[idx]
-            r = int(hex_color[1:3], 16)
-            g = int(hex_color[3:5], 16)
-            b = int(hex_color[5:7], 16)
-            img.putpixel((x, y), (r, g, b, 255))
-    return img
-
 def image_to_base64(img: Image.Image) -> str:
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode()
-
-def upscale_image(img: Image.Image, target: int = 512) -> Image.Image:
-    return img.resize((target, target), Image.NEAREST)
-
-# ── Autotile generation ──
-# Bitmask: TOP=1, RIGHT=2, BOTTOM=4, LEFT=8
-# Mask 15 = fully surrounded (base tile from AI)
-# Mask 0 = isolated block (all edges exposed)
-
-def _darken_px(r, g, b, amount):
-    return (max(0, int(r * (1 - amount))), max(0, int(g * (1 - amount))), max(0, int(b * (1 - amount))))
-
-def generate_autotile_variant(base_img: Image.Image, mask: int) -> Image.Image:
-    """Apply outline, edge shading, and rounded corners for a bitmask variant."""
-    size = base_img.width
-    img = base_img.copy()
-    pixels = img.load()
-
-    top_exposed = (mask & 1) == 0
-    right_exposed = (mask & 2) == 0
-    bottom_exposed = (mask & 4) == 0
-    left_exposed = (mask & 8) == 0
-
-    # Pass 1: Edge shading (highlight top/left, shadow bottom/right)
-    band = max(2, size // 5)
-    intensity = 0.15
-    for y in range(size):
-        for x in range(size):
-            r, g, b, a = pixels[x, y]
-            if a < 25:
-                continue
-            f = 0.0
-            # Note: y=0 is top in PIL (opposite of Unity where y=0 is bottom)
-            if top_exposed:
-                if y < band:
-                    f += intensity * (1 - y / band)
-            if left_exposed:
-                if x < band:
-                    f += intensity * 0.6 * (1 - x / band)
-            if bottom_exposed:
-                d = size - 1 - y
-                if d < band:
-                    f -= intensity * (1 - d / band)
-            if right_exposed:
-                d = size - 1 - x
-                if d < band:
-                    f -= intensity * 0.6 * (1 - d / band)
-            if f != 0:
-                r = max(0, min(255, int(r + f * 255)))
-                g = max(0, min(255, int(g + f * 255)))
-                b = max(0, min(255, int(b + f * 255)))
-                pixels[x, y] = (r, g, b, a)
-
-    # Pass 2: Outline — darken exposed edge pixels
-    outline_w = max(1, size // 16)
-    for y in range(size):
-        for x in range(size):
-            r, g, b, a = pixels[x, y]
-            if a < 25:
-                continue
-            hit = False
-            if top_exposed and y < outline_w:
-                hit = True
-            if bottom_exposed and y >= size - outline_w:
-                hit = True
-            if left_exposed and x < outline_w:
-                hit = True
-            if right_exposed and x >= size - outline_w:
-                hit = True
-            if hit:
-                dr, dg, db = _darken_px(r, g, b, 0.4)
-                pixels[x, y] = (dr, dg, db, a)
-
-    # Pass 3: Rounded corners — clear pixels at exposed corners
-    radius = max(1, size // 10)
-    for y in range(size):
-        for x in range(size):
-            clear = False
-            if top_exposed and left_exposed and x + y < radius:
-                clear = True
-            if top_exposed and right_exposed and (size - 1 - x) + y < radius:
-                clear = True
-            if bottom_exposed and left_exposed and x + (size - 1 - y) < radius:
-                clear = True
-            if bottom_exposed and right_exposed and (size - 1 - x) + (size - 1 - y) < radius:
-                clear = True
-            if clear:
-                pixels[x, y] = (0, 0, 0, 0)
-
-    return img
-
-def generate_tileset(base_img: Image.Image) -> dict[int, Image.Image]:
-    """Generate all 16 autotile variants from a base tile (mask 15)."""
-    variants = {}
-    for mask in range(16):
-        variants[mask] = generate_autotile_variant(base_img, mask)
-    return variants
 
 # ── Phased generation pipeline ──
 
