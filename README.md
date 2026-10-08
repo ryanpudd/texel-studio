@@ -137,6 +137,63 @@ After generating a block sprite, click "Generate Tileset" to create all 16 autot
 
 Output: `BlockName_00.png` through `BlockName_15.png`
 
+## Painting with Claude Code (MCP)
+
+Texel can also run headless, with [Claude Code](https://claude.com/claude-code) as the painter. `mcp_server.py` is a stdio MCP server that exposes the canvas tools:
+
+- `create_canvas` and `list_canvases`
+- `draw`, which takes a batch of ops
+- `undo` and `clear`
+- `view_canvas`, which returns a text grid and an image
+- `export_png` and `export_tileset`
+
+The `texel-painter` agent carries the painting know-how and declares the server inline, so the tools load only inside that agent and never in your other Claude Code sessions. See [ADR 0001](docs/adr/0001-painter-agent-owns-the-mcp-server.md) for why.
+
+**Install.** From this repo, with its venv set up (`pip install -r requirements.txt`):
+
+```bash
+# For all your projects (~/.claude/agents/texel-painter.md)
+venv/Scripts/python.exe install_painter_agent.py      # macOS/Linux: venv/bin/python
+
+# Or for one game project (<dir>/.claude/agents/texel-painter.md)
+venv/Scripts/python.exe install_painter_agent.py --project /path/to/game
+```
+
+The installer points the agent at this checkout's venv Python and `mcp_server.py`. Rerun it with `--force` after pulling changes to the agent.
+
+A project install only gets its MCP server once you've opened that folder in Claude Code and accepted the trust dialog. Until then Claude Code skips the agent's server. A user-level install doesn't have this restriction.
+
+**Art session.** Paint together over many turns:
+
+```bash
+claude --agent texel-painter
+```
+
+Give the painter a `.gpl` palette with a role name for each colour (`outline`, `skin`, `skin-shadow`…), or let it create one. Ask it to export each version you're happy with.
+
+**Resuming.** Use `claude --agent texel-painter --resume <id>`. A plain `--resume` keeps the painter's prompt but drops its MCP server. Canvases live in the server's memory, so they never survive a resume. The painter reloads a sprite from its native export with `create_canvas(from_png=…)`.
+
+**Delegating from a game-dev session.** Ask Claude to use the `texel-painter` agent and give it:
+- the brief;
+- the size (8, 16, 32 or 64);
+- the sprite type (block, icon, character or freeform);
+- the `palette_file` (an absolute path);
+- any reference image paths;
+- the output path (an absolute `.png`);
+- whether you want a tileset.
+
+To edit an existing sprite, also pass `from_png`.
+
+The painter returns the exported paths, a short self-critique and any defaults it assumed. Each delegated run starts with an empty server, so a run must finish by exporting.
+
+**Eval.** `painter_eval.py` paints three fixed sprites (a 16px sword, a 16px cobblestone tile and a 32px goblin) through the agent. It writes a contact sheet and a stats table to `output/painter_eval/<label>/`:
+
+```bash
+venv/Scripts/python.exe painter_eval.py --label baseline --reps 2
+```
+
+Run it before and after changing the agent prompt or the tool descriptions. Only keep a change, including moving text from the prompt into tool descriptions, if the sprites don't get worse.
+
 ## Scaling (Optional)
 
 For concurrent generation support, add Redis and run workers:
