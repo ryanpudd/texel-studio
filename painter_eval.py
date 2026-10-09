@@ -5,6 +5,7 @@ Claude Code, then writes a contact sheet and a stats table. Use it before and af
 prompt or tool descriptions; a change only lands if the sprites don't get worse.
 
   venv/Scripts/python.exe painter_eval.py --label baseline [--reps 2] [--sprites sword,cobble] [--jobs 3]
+  venv/Scripts/python.exe painter_eval.py --label opus --model opus --budget 5
   venv/Scripts/python.exe painter_eval.py --label baseline --report-only
 
 Each run renders agents/texel-painter.md from this checkout into this repo's .claude/agents/ (the repo
@@ -18,6 +19,7 @@ import argparse
 import json
 import shutil
 import subprocess
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -58,7 +60,7 @@ def brief_for(sprite: str, palette: Path, png: Path) -> str:
             f"Output path: {png.as_posix()}. No tileset.")
 
 
-def run(run_dir: Path, sprite: str, budget: str) -> None:
+def run(run_dir: Path, sprite: str, budget: str, model: str | None = None) -> None:
     png = run_dir / "sprite.png"
     if png.exists() and (run_dir / "stream.jsonl").exists():
         print(f"[{run_dir.name}] already done, skipping", flush=True)
@@ -71,6 +73,8 @@ def run(run_dir: Path, sprite: str, budget: str) -> None:
     cmd = [shutil.which("claude"), "-p", brief_for(sprite, palette, png), "--agent", "texel-painter",
            "--allowedTools", *AGENT_TOOLS, "--output-format", "stream-json", "--verbose",
            "--no-session-persistence", "--max-budget-usd", budget]
+    if model:
+        cmd += ["--model", model]  # overrides the model pinned in the agent file
     with open(run_dir / "stream.jsonl", "w", encoding="utf-8") as out:
         subprocess.run(cmd, cwd=REPO_ROOT, stdout=out, stderr=subprocess.DEVNULL,
                        stdin=subprocess.DEVNULL, encoding="utf-8")
@@ -176,12 +180,14 @@ def table(label_dir: Path, runs: list[str], sprites: list[str]) -> str:
 
 
 def main() -> None:
+    sys.stdout.reconfigure(encoding="utf-8")  # painter reports contain non-ASCII; Windows pipes default to cp1252
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--label", required=True, help="name for this eval run, e.g. baseline or slim-draw-desc")
     ap.add_argument("--sprites", help=f"comma-separated subset of {','.join(SPRITES)}")
     ap.add_argument("--reps", type=int, default=1)
     ap.add_argument("--jobs", type=int, default=3)
     ap.add_argument("--budget", default="1.5", help="max USD per sprite run")
+    ap.add_argument("--model", help="run the agent on this model instead of its pinned one, e.g. opus")
     ap.add_argument("--report-only", action="store_true")
     a = ap.parse_args()
 
@@ -192,7 +198,7 @@ def main() -> None:
         install(project=REPO_ROOT, force=True)  # always evaluate this checkout's agent prompt
         started = time.time()
         with ThreadPoolExecutor(a.jobs) as ex:
-            list(ex.map(lambda rs: run(label_dir / f"{rs[1]}@{rs[0]}", rs[1], a.budget),
+            list(ex.map(lambda rs: run(label_dir / f"{rs[1]}@{rs[0]}", rs[1], a.budget, a.model),
                         [(r, s) for r in runs for s in sprites]))
         print(f"finished in {round(time.time() - started)}s")
     print(table(label_dir, runs, sprites))
