@@ -14,7 +14,8 @@ Texel's canvas tools are only needed when someone is making pixel art, so we kee
 
 ## Consequences
 
-- Installing means copying the agent file into `.claude/agents/` or `~/.claude/agents/`, with the server command pointing at the repo venv.
+- Installing means copying the agent file into `.claude/agents/` or `~/.claude/agents/`, with the server command pointing at the repo venv. `install_painter_agent.py` does this.
+- A project-level agent's `mcpServers` load only once that folder is trusted in Claude Code. In an untrusted folder the agent runs without its server, and the debug log reports "Skipping frontmatter MCP servers … not trusted". User-level agents aren't affected. Found while building the agent on Claude Code 2.1.292.
 - You choose the art session at launch; you can't switch into it mid-conversation.
 - Delegated runs are stateless (every run ends with an export, and edits start from `create_canvas(from_png=…)`), so they don't depend on the MCP server process surviving between subagent runs.
 - Each subagent run, including a `SendMessage` resume, gets a fresh server process, so canvases never carry over between runs. Statelessness is required, not just a safe choice.
