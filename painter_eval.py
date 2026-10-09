@@ -82,6 +82,7 @@ def stats(run_dir: Path) -> dict:
     """Summarise one run from its stream-json transcript."""
     calls: list[str] = []
     errors = 0
+    gated = 0
     result: dict = {}
     pending: dict[str, str] = {}
     stream = run_dir / "stream.jsonl"
@@ -98,8 +99,10 @@ def stats(run_dir: Path) -> dict:
                     pending[b["id"]] = name
         elif e.get("type") == "user":
             for b in e["message"].get("content", []):
-                if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("is_error"):
-                    errors += pending.get(b.get("tool_use_id"), "") == "draw"
+                if isinstance(b, dict) and b.get("type") == "tool_result":
+                    gated += "Not exported:" in json.dumps(b.get("content"))
+                    if b.get("is_error"):
+                        errors += pending.get(b.get("tool_use_id"), "") == "draw"
         elif e.get("type") == "result":
             result = e
     u = result.get("usage", {})
@@ -109,7 +112,7 @@ def stats(run_dir: Path) -> dict:
         "in_tok": u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0) + u.get("cache_creation_input_tokens", 0),
         "out_tok": u.get("output_tokens"),
         "draws": calls.count("draw"), "draw_errors": errors,
-        "views": calls.count("view_canvas"), "undos": calls.count("undo"),
+        "views": calls.count("view_canvas"), "undos": calls.count("undo"), "gated": gated,
         "png": (run_dir / "sprite.png").exists(),
         "report": (result.get("result") or "").strip(),
     }
@@ -156,15 +159,15 @@ def contact_sheet(label_dir: Path, runs: list[str], sprites: list[str]) -> Path:
 
 
 def table(label_dir: Path, runs: list[str], sprites: list[str]) -> str:
-    rows = ["| run | sprite | cost $ | input tok | output tok | turns | draws (err) | views | undos | secs | png |",
-            "|---|---|---|---|---|---|---|---|---|---|---|"]
+    rows = ["| run | sprite | cost $ | input tok | output tok | turns | draws (err) | views | undos | exports gated | secs | png |",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     reports = []
     for rep in runs:
         for s in sprites:
             st = stats(label_dir / f"{s}@{rep}")
             cost = f"{st['cost']:.2f}" if st["cost"] is not None else "-"
             rows.append(f"| {rep} | {s} | {cost} | {st['in_tok']} | {st['out_tok']} | {st['turns']} | "
-                        f"{st['draws']} ({st['draw_errors']}) | {st['views']} | {st['undos']} | {st['secs']} | "
+                        f"{st['draws']} ({st['draw_errors']}) | {st['views']} | {st['undos']} | {st['gated']} | {st['secs']} | "
                         f"{'yes' if st['png'] else 'NO'} |")
             reports.append(f"### {s}@{rep}\n\n{st['report'] or '(no report)'}\n")
     md = "\n".join(rows) + "\n\n## Painter reports\n\n" + "\n".join(reports)

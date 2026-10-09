@@ -36,7 +36,8 @@ def _yaml_str(path: Path) -> str:
 def render_agent() -> str:
     text = TEMPLATE.read_text(encoding="utf-8")
     return (text.replace("{{PYTHON}}", _yaml_str(venv_python()))
-                .replace("{{SERVER}}", _yaml_str(REPO_ROOT / "mcp_server.py")))
+                .replace("{{SERVER}}", _yaml_str(REPO_ROOT / "mcp_server.py"))
+                .replace("{{HOOK}}", _yaml_str(REPO_ROOT / "painter_hook.py")))
 
 
 def install(project: Path | None = None, force: bool = False) -> Path:

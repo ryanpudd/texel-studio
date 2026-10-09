@@ -159,7 +159,7 @@ venv/Scripts/python.exe install_painter_agent.py      # macOS/Linux: venv/bin/py
 venv/Scripts/python.exe install_painter_agent.py --project /path/to/game
 ```
 
-The installer points the agent at this checkout's venv Python and `mcp_server.py`. Rerun it with `--force` after pulling changes to the agent.
+The installer points the agent at this checkout's venv Python, `mcp_server.py` and `painter_hook.py`. The hook refuses an export while the canvas has unviewed changes, and until the painter has done enough critique rounds: 2 for 8px and 16px sprites, 3 for 32px and 64px. Rerun it with `--force` after pulling changes to the agent.
 
 A project install only gets its MCP server once you've opened that folder in Claude Code and accepted the trust dialog. Until then Claude Code skips the agent's server. A user-level install doesn't have this restriction.
 

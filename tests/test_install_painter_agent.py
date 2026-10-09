@@ -31,6 +31,23 @@ def test_rendered_agent_declares_the_texel_server_inline_with_absolute_paths():
     assert "{{" not in render_agent()
 
 
+def test_rendered_agent_gates_exports_with_the_painter_hook():
+    meta, _ = frontmatter(render_agent())
+    texel = meta["mcpServers"][0]["texel"]
+    hooks = meta["hooks"]
+
+    [post] = hooks["PostToolUse"]
+    assert post["matcher"] == "mcp__texel__.*"
+    [pre] = hooks["PreToolUse"]
+    assert pre["matcher"] == "mcp__texel__export_.*"
+    for entry, mode in ((post, "post"), (pre, "pre")):
+        [hook] = entry["hooks"]
+        assert hook["type"] == "command"
+        assert hook["command"] == texel["command"]  # the same venv Python as the server
+        script, arg = hook["args"]
+        assert Path(script) == REPO_ROOT / "painter_hook.py" and arg == mode
+
+
 def test_description_states_the_delegation_handoff():
     meta, _ = frontmatter(render_agent())
     d = meta["description"]
