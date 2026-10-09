@@ -44,23 +44,46 @@ Sprites in one game should share one palette, so use a project palette file and 
 
 Use Write only to create palette files. Never overwrite a file you didn't create in this run.
 
+## Checklist
+
+Before drawing anything, write a numbered checklist of everything the sprite must show. Include every feature, item, colour and detail named in the brief, and, if there's a reference, every distinctive feature you see in it (for a character: hair, face and expression, each garment and accessory, what's held, footwear, proportions). Be specific: "pouch on left hip (viewer's right)", not "accessories".
+
+This list is your memory for the job. Rewrite it with its status after every `view_canvas`:
+- `[x] 4. rope belt with knot and hanging ends: rows 34-35, ends at x=30-31`
+- `[ ] 7. tunic patches: missing`
+
+Only items marked done, with coordinates, count. You're not finished while anything is still unmarked, unless you report it as missing.
+
 ## Painting loop
 
 Paint in rounds, never in one shot.
 
-1. **Plan:** the silhouette and where it sits on the canvas, which palette roles go where, and a light direction (top-left unless the brief says otherwise).
+1. **Plan:** write the checklist, then plan the silhouette and where it sits on the canvas, which palette roles go where, and a light direction (top-left unless the brief says otherwise).
 2. **Block in:** draw large shapes and fills first in one `draw` call, then shading, then details and the outline.
 3. **Look:** call `view_canvas` after every `draw`.
-4. **Critique:** compare the view against the brief (and the reference, if there is one). Name the two or three biggest problems specifically, with coordinates, for example "blade is 2px too short; hilt at (6,11) is lost against the guard".
+4. **Critique:** update the checklist first. Anything that has gone missing or got worse since the last round is a problem, even if you weren't working on it. Then compare the view against the brief (and the reference, if there is one). Name the two or three biggest problems specifically, with coordinates, for example "blade is 2px too short; hilt at (6,11) is lost against the guard".
 5. **Fix:** draw again, or `undo` a round that made things worse.
 
-Repeat steps 3 to 5 until the critique finds nothing that matters. Do at least two critique rounds before you call a sprite done. Stop at about eight rounds, and say what's still weak.
+Repeat steps 3 to 5 until every checklist item is done and the critique finds nothing that matters. Do at least two critique rounds before you call a sprite done. For 32px and 64px sprites, do at least three. Stop at about ten rounds, and report what's still weak or missing.
+
+Before you export, do one final pass: re-read the brief and look at the reference again, item by item against the last view. Don't rely on your memory of them.
 
 What to check in every critique:
 - **Silhouette:** is the subject recognisable from its shape alone?
 - **Readability:** do neighbouring areas have enough contrast? Is the outline unbroken where it should be?
 - **Light:** is the shading consistent with one light direction? Avoid "pillow shading" (darkening every edge evenly).
 - **Clean pixels:** no stray single pixels, and no jagged steps where a line should be smooth.
+
+## Editing an existing sprite
+
+When you start from `from_png`, the loaded pixels are the work. Your job is to change what was asked and keep everything else.
+
+1. Call `view_canvas` on the loaded canvas before drawing anything.
+2. Write an **inventory**: every feature the sprite already has that the brief doesn't ask you to change, with coordinates. For example: "patch on tunic at (20-23, 30-33)", "pouch at (34-38, 36-40)". Add each one to your checklist as an item to keep.
+3. Change only the regions the brief asks about, with targeted `draw` ops: `pixels`, small `rect`s, and `flood_fill` on one area. You never `clear` the canvas, and you never repaint the whole figure. If a fix means reshaping a part, redraw that part alone. Then make sure the parts around it still connect.
+4. After every round, check every inventory item is still there and unchanged. If an edit damaged one, `undo` it or repair it straight away.
+
+If the brief asks for something you can only get by repainting most of the sprite, say so in your report instead of silently starting over.
 
 ## Sprite types
 
@@ -87,6 +110,7 @@ End a delegated run with exactly these sections and nothing else. Don't include 
 
 ```
 Exported: <absolute path(s)>
+Checklist: <n of m items present; then list any missing or weak items. For edits, also say whether every inventory item was kept>
 Self-critique: <2-4 sentences: how well it meets the brief, and what's weakest>
 Defaults assumed: <list, or "none">
 ```

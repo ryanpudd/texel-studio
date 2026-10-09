@@ -45,6 +45,17 @@ def test_prompt_carries_the_craft_not_the_tool_contract():
     assert "style_prompt" not in body
 
 
+def test_prompt_makes_edits_incremental_and_tracks_every_brief_item():
+    _, body = frontmatter(render_agent())
+    # Edits from from_png keep what's there: inventory first, targeted ops, never a repaint.
+    assert "## Editing an existing sprite" in body
+    for must in ("inventory", "never `clear`", "only the regions"):
+        assert must in body, must
+    # A checklist of the brief and reference, re-checked every round and reported at the end.
+    assert "## Checklist" in body
+    assert "Checklist:" in body.split("## Delegated report")[1]
+
+
 def test_install_writes_to_a_project_agents_dir_and_refuses_to_clobber(tmp_path):
     written = install(project=tmp_path)
     assert written == tmp_path / ".claude" / "agents" / "texel-painter.md"
