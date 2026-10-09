@@ -171,6 +171,8 @@ claude --agent texel-painter
 
 Give the painter a `.gpl` palette with a role name for each colour (`outline`, `skin`, `skin-shadow`…), or let it create one. Ask it to export each version you're happy with.
 
+**Choosing a model.** The agent is pinned to Sonnet, which is fast and cheap and does well on 8–32px icons and tiles. For a detailed 64px character, Opus is noticeably better but costs more. On the same reference brief, Sonnet took 2 minutes and $0.41 with 3 critique rounds; Opus took 13 minutes and $2.79 with 10 rounds, and got every detail in. To override the pin, use `claude --agent texel-painter --model opus`. When delegating, ask the parent session to run the agent with Opus.
+
 **Resuming.** Use `claude --agent texel-painter --resume <id>`. A plain `--resume` keeps the painter's prompt but drops its MCP server. Canvases live in the server's memory, so they never survive a resume. The painter reloads a sprite from its native export with `create_canvas(from_png=…)`.
 
 **Delegating from a game-dev session.** Ask Claude to use the `texel-painter` agent and give it:
